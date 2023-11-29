@@ -1,0 +1,57 @@
+
+***Dennis Nzioki***
+
+## **INTRODUCTION :**
+
+
+This documentation provides an overview of the data science project, highlighting the chosen software tools, platforms, and hardware methodologies. The project aims to analyze and process data using RStudio, an Integrated Development Environment (IDE) known for its simplicity, interactive console, project management capabilities, and data analysis features.
+
+## **Project Scope :**
+
+The project involves various data processing and visualization tasks, utilizing RStudio's robust set of tools for code editing, debugging, and version management. The code undergoes multiple data processing steps, followed by exploratory data analysis and the implementation of machine learning techniques.
+
+
+## **Software Tools :**
+
+RStudio was selected as the primary IDE 
+## **Upload Data:**
+
+The first step is to upload your data file in either CSV 
+## **Data Cleaning:**
+After you upload your data, you can click on "Submit" to start cleaning the data. This will remove missing values, duplicates, and any other anomalies that might exist in the data. You can explore the missing values and distributions of the data under the "Data Cleaning" tab.
+
+## **Data Analysis:**
+Under the "Data Analysis" tab, you can explore the relationships between different variables and build predictive models. You can start with an "Overview" of the data, followed by exploring "Relationships" between different variables. You can then build "Models" to predict outcomes based on the input variables. Finally, you can visualize the models under the "Model Visualization" tab.
+
+
+## **Missing Values:**
+Under the "Missing Values" sub-menu, you can explore the missing values in the data. You can visualize the patterns of missing values using the "Missing Values Plot" and "Variable Importance Plot". You can also explore different patterns of missing values using the "Multiple Variable Importance Plots".
+
+## **Distributions:**
+Under the "Distributions" sub-menu, you can explore the distributions of different variables in the data. You can use the distribution plots to understand the shape and spread of the data.
+
+## **Relationships:**
+Under the "Relationships" sub-menu, you can explore the relationships between different variables. You can use the K-means clustering algorithm to identify clusters of similar data points, and use the correlation plot to understand the correlation between different variables. You can also explore the relationship between pregnancies, insulin, blood pressure levels and the outcome.
+
+## **Models:**
+Under the "Models" sub-menu, you can build predictive models to predict the outcome variable. You can explore the performance of the models using the ROC curve and precision-recall curve.
+
+## **Model Visualization:**
+Under the "Model Visualization" sub-menu, you can visualize the models using the SOM algorithm. You can explore the SOM plots to identify clusters of similar data points and visualize the decision boundaries of the models.
+
+
+## **Limitations:**
+
+There are some limitations to our dashboard that users should be aware of. The dataset only includes information on a limited number of features, so there may be other important factors that are not captured in the dataset. In addition, our models are based on statistical analysis and may not be accurate for every individual.
+
+## **Future Directions:**
+
+
+
+-   Incorporating additional features and data sources to provide a more comprehensive picture of diabetes.
+-   Providing more detailed explanations of the statistical models and algorithms used in the dashboard.
+-   Gathering feedback from users to identify areas for improvement and address any issues or concerns.
+
+## **Conclusion:**
+
+This dashboard provides valuable insights into the diabetes dataset and can help users better understand this chronic disease.

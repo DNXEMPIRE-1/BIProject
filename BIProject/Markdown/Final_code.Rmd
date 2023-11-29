@@ -1,0 +1,718 @@
+---
+title: "Appendix"
+author: "Dennis Nzioki"
+date: "2023/11/28"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+# Import library
+```{r}
+library(caret)
+library(ISLR2)
+library(rsample)
+library(pROC)
+library(ggplot2)
+library(klaR)
+library(splines)
+library(tidyverse)
+library(corrplot)
+library(GGally)
+library(gridExtra)
+library(glue)
+library(PerformanceAnalytics)
+library(rpart)
+library(rpart.plot)
+library(bestglm)
+library(randomForest)
+library(kernlab)
+```
+
+# Data cleaning and processing
+```{r}
+#Import diabetes Table and view. Read diabetes data
+diabetes <- read.csv("diabetes.csv", header = TRUE)
+
+#setting seed for reproducible results
+set.seed(12345)
+
+#altering 0 values in glucose, blood pressure and BMI as medians of that predictors
+diabetes$Glucose[diabetes$Glucose==0] <- median(diabetes$Glucose[diabetes$Glucose>0])
+diabetes$BloodPressure[diabetes$BloodPressure==0] <- median(diabetes$BloodPressure[diabetes$BloodPressure>0])
+diabetes$BMI[diabetes$BMI==0] <- median(diabetes$BMI[diabetes$BMI>0])
+
+#for skin thickness, filling missing data (zeros) by building a linear regression with BMI
+#selecting rows where thickness is 0
+invalid_skin_rows <- as.integer(rownames(diabetes[diabetes$SkinThickness==0,]))
+
+#filtering data with respect to valid and invalid data rows (where thickness is 0)
+invalid_BMI <- diabetes[invalid_skin_rows,'BMI']
+valid_BMI <- diabetes[-invalid_skin_rows,'BMI']
+valid_skin <- diabetes[-invalid_skin_rows,'SkinThickness']
+
+#building a linear model and predicting for missing thicknesses
+linear_model_data <- data.frame(BMI=valid_BMI, Thickness=valid_skin)
+linear_model_for_skin <- lm(Thickness ~ BMI, data = linear_model_data)
+
+par(mfrow = c(2,2))
+plot(linear_model_for_skin)
+```
+When we plot the regression diagnostics graphs, we seem to satisfy the assumptions. From Residuals vs Fitted plot, there is no clear pattern. The red trend line is nearly flat, the model seems to capture true linear relationship. Also, from the same plot, we can see that he variability of residuals are not that pronounced. Thus, we can say that the model satisfies constant variance assumption adequately. Also, from Normal Q-Q plot, model seems to satisfy normality of errors.
+```{r}
+predict_skin <- predict(linear_model_for_skin, newdata = data.frame(BMI=invalid_BMI))
+
+#finding errors of our linear regression model by predicting for valid data onlv and creating random errors
+predict_error <- predict(linear_model_for_skin, newdata = data.frame(BMI=valid_BMI))
+error_lm <- valid_skin - predict_error
+error_mean <- mean(error_lm)
+error_sd <- sd(error_lm)
+random_errors <- rnorm(length(predict_skin), mean=error_mean, sd=error_sd)
+
+#finding final predictions by adding random errors to our predictions (this step is done to reduce collinearity between predictors)
+final_prediction_skin <- predict_skin + random_errors
+diabetes$SkinThickness[invalid_skin_rows] <- round(final_prediction_skin)
+
+# Create prediction grid to see regression line
+xgrid <- list(BMI = seq(min(valid_BMI), max(valid_BMI), len=201))
+# Perform prediction to see regression line
+fitted_values <- predict(linear_model_for_skin, newdata = xgrid)
+par(mfrow = c(1,1))
+plot(valid_BMI, valid_skin, pch=19, col = "darkgray", xlab = "BMI", ylab = "Skin Thickness", main = "Linear Regression between BMI and Skin Thickness")
+lines(xgrid$BMI, fitted_values, lwd=2)
+```
+For insulin, filling missing data (zeros) by building a log linear regression with glucose
+```{r}
+#selecting rows where insulin is 0
+invalid_insulin_rows <- as.integer(rownames(diabetes[diabetes$Insulin==0,]))
+#filtering data with respect to valid and invalid data rows (where insulin is 0)
+invalid_glucose <- diabetes[invalid_insulin_rows,'Glucose']
+valid_glucose <- diabetes[-invalid_insulin_rows,'Glucose']
+valid_insulin <- diabetes[-invalid_insulin_rows,'Insulin']
+
+plot(valid_glucose, log(valid_insulin), pch=19, col = "black", xlab = "Glucose", ylab = "ln(Insulin)", main = "Ln Transformed Insulin vs Glucose")
+
+```
+When we natural log transform insulin, they seem to follow a fairly linear relationship.
+```{r}
+#building a log linear model and predicting for missing insulin data
+log_model_data <- data.frame(Glucose=valid_glucose, Insulin=valid_insulin)
+log_model_for_insulin <- lm(log(Insulin) ~ Glucose, data = log_model_data)
+
+par(mfrow = c(2,2))
+plot(log_model_for_insulin)
+mtext("Model Diagnostics for Insulin", side=3, line=22, at=-0.005)
+```
+When we plot the regression diagnostics graphs, we seem to satisfy the assumptions. From Residuals vs Fitted plot, there is no clear pattern. The red trend line is nearly flat, the model seems to capture true linear relationship. Also, from the same plot, we can see that he variability of residuals are not that pronounced. Thus, we can say that the model satisfies constant variance assumption adequately. Also, from Normal Q-Q plot, there are some values not fitted to normal distribution but it seems reasonable to assume the normality of errors.
+```{r}
+predict_insulin <- exp(predict(log_model_for_insulin, newdata = data.frame(Glucose=invalid_glucose)))
+
+#finding errors of our log linear regression model by predicting for valid data onlv and creating random errors
+predict_error_insulin <- exp(predict(log_model_for_insulin, newdata = data.frame(Glucose=valid_glucose)))
+error_insulin <- valid_insulin - predict_error_insulin
+error_mean_insulin <- mean(error_insulin)
+error_sd_insulin <- sd(error_insulin)/10
+random_errors_insulin <- rnorm(length(predict_insulin), mean=error_mean_insulin, sd=error_sd_insulin)
+
+#finding final predictions by adding random errors to our predictions (this step is done to reduce collinearity between predictors)
+final_prediction_insulin <- predict_insulin + random_errors_insulin
+diabetes$Insulin[invalid_insulin_rows] <- round(final_prediction_insulin)
+
+# Create prediction grid to see regression line
+xgrid <- list(Glucose = seq(min(valid_glucose), max(valid_glucose), len=201))
+# Perform prediction to see regression line
+fitted_values <- exp(predict(log_model_for_insulin, newdata = xgrid))
+
+par(mfrow = c(1,1))
+plot(valid_glucose, valid_insulin, pch=19, col = "darkgray", xlab = "Glucose", ylab = "Insulin", main = "Log Linear Regression between Glucose and Insulin")
+lines(xgrid$Glucose, fitted_values, lwd=2)
+```
+
+# Variables Inspection
+```{r}
+names(diabetes)[names(diabetes) == 'DiabetesPedigreeFunction'] <- 'DPF'
+names(diabetes)[names(diabetes) == 'BloodPressure'] <- 'BloodP'
+names(diabetes)[names(diabetes) == 'SkinThickness'] <- 'SkinT'
+names(diabetes)[names(diabetes) == 'Pregnancies'] <- 'Pregnancy'
+
+#summary statistics
+cat('Descriptive statistics of the data:')
+summary(diabetes)
+
+#correlation plot
+M<-cor(diabetes)
+corrplot(M, order = 'AOE')
+
+#changing outcome to factor
+diabetes$Outcome <- as.factor(diabetes$Outcome)
+
+#pairs plot
+ggpairs(diabetes, aes(colour = Outcome, alpha = 0.4)) + theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+There seems to be no strong correlation among different variables other than insulin-glucose and BMI-skin thickness. Plotting density graphs for predictors
+```{r}
+num_predictors <- length(diabetes)-1
+names_predictors <- colnames(diabetes)
+
+den1 <- ggplot(diabetes, aes(x = Pregnancy, fill = Outcome)) + geom_density(alpha = 0.5) + labs(y="Density", x="Pregnancies") + theme_bw() + theme(legend.position = "none")
+den2 <- ggplot(diabetes, aes(x = Glucose, fill = Outcome)) + geom_density(alpha = 0.5) + labs(y="Density", x="Glucose") + theme_bw() + theme(legend.position = "none")
+den3 <- ggplot(diabetes, aes(x = BloodP, fill = Outcome)) + geom_density(alpha = 0.5) + labs(y="Density", x="Blood Pressure") + theme_bw() + theme(legend.position = "none")
+den4 <- ggplot(diabetes, aes(x = SkinT, fill = Outcome)) + geom_density(alpha = 0.5) + labs(y="Density", x="Skin Thickness") + theme_bw() + theme(legend.position = c(0.71, 0.82))
+den5 <- ggplot(diabetes, aes(x = Insulin, fill = Outcome)) + geom_density(alpha = 0.5) + labs(y="Density", x="Insulin") + theme_bw() + theme(legend.position = "none")
+den6 <- ggplot(diabetes, aes(x = BMI, fill = Outcome)) + geom_density(alpha = 0.5) + labs(y="Density", x="Body Mass Index") + theme_bw() + theme(legend.position = "none")
+den7 <- ggplot(diabetes, aes(x = DPF, fill = Outcome)) + geom_density(alpha = 0.5) + labs(y="Density", x="Diabetes Pedigree Func.") + theme_bw() + theme(legend.position = "none")
+den8 <- ggplot(diabetes, aes(x = Age, fill = Outcome)) + geom_density(alpha = 0.5) + labs(y="Density", x="Age") + theme_bw() + theme(legend.position = "none")
+grid.arrange(den1, den2, den3, den4, den5, den6, den7, den8, ncol=4)
+```
+plotting boxplots for predictors
+```{r}
+box1 <- ggplot(diabetes, aes(x = Outcome, y = Pregnancy))+ geom_boxplot(aes(fill = Outcome)) + theme_bw() + theme(legend.position = "none") + labs(y="Pregnancies")
+box2 <- ggplot(diabetes, aes(x = Outcome, y = Glucose))+ geom_boxplot(aes(fill = Outcome)) + theme_bw() + theme(legend.position = "none") + labs(y="Glucose")
+box3 <- ggplot(diabetes, aes(x = Outcome, y = BloodP))+ geom_boxplot(aes(fill = Outcome)) + theme_bw() + theme(legend.position = "none") + labs(y="Blood Pressure")
+box4 <- ggplot(diabetes, aes(x = Outcome, y = SkinT))+ geom_boxplot(aes(fill = Outcome)) + theme_bw() + theme(legend.position = c(0.5, 0.8)) + labs(y="Skin Thickness")
+box5 <- ggplot(diabetes, aes(x = Outcome, y = Insulin))+ geom_boxplot(aes(fill = Outcome)) + theme_bw() + theme(legend.position = "none") + labs(y="Insulin")
+box6 <- ggplot(diabetes, aes(x = Outcome, y = BMI))+ geom_boxplot(aes(fill = Outcome)) + theme_bw() + theme(legend.position = "none") + labs(y="Body Mass Index")
+box7 <- ggplot(diabetes, aes(x = Outcome, y = DPF))+ geom_boxplot(aes(fill = Outcome)) + theme_bw() + theme(legend.position = "none") + labs(y="Diabetes Pedigree Func.")
+box8 <- ggplot(diabetes, aes(x = Outcome, y = Age))+ geom_boxplot(aes(fill = Outcome)) + theme_bw() + theme(legend.position = "none") + labs(y="Age")
+grid.arrange(box1, box2, box3, box4, box5, box6, box7, box8, ncol=4)
+```
+It seems like output is mostly related with glucose levels. Other revelant predictors might be pregnancies, body mass index, insulin, skin thickness, and age, but their predictive power may be lower than glucose levels. It makes sense that glucose levels are the leading predictor for diabetes detection.
+
+# Perform Model building and performance Evaluation
+```{r}
+#Set split number
+split<-10
+#Define train and test data with Boost sample split
+bst_sample<-bootstraps(diabetes,times=split)
+
+#Initial variables 
+NIR<-rep(NA,split)
+#Initialization for KNN
+KNN_ROC<-list()
+KNN_Accuracy_Rate<-rep(NA,split)
+KNN_AUC<-rep(NA,split)
+#Initialization for LDA
+LDA_ROC<-list()
+LDA_Accuracy_Rate<-rep(NA,split)
+LDA_AUC<-rep(NA,split)
+#Initialization for QDA
+QDA_ROC<-list()
+QDA_Accuracy_Rate<-rep(NA,split)
+QDA_AUC<-rep(NA,split)
+#Initialization for enhanced LDA
+En_LDA_ROC<-list()
+En_LDA_Accuracy_Rate<-rep(NA,split)
+En_LDA_AUC<-rep(NA,split)
+#Initialization for enhanced QDA
+En_QDA_ROC<-list()
+En_QDA_Accuracy_Rate<-rep(NA,split)
+En_QDA_AUC<-rep(NA,split)
+#Initialization for Logistic
+Logistic_ROC<-list()
+Logistic_Accuracy_Rate<-rep(NA,split)
+Logistic_AUC<-rep(NA,split)
+Back_Logistic_ROC<-list()
+Back_Logistic_Accuracy_Rate<-rep(NA,split)
+Back_Logistic_AUC<-rep(NA,split)
+Best_Logistic_ROC<-list()
+Best_Logistic_Accuracy_Rate<-rep(NA,split)
+Best_Logistic_AUC<-rep(NA,split)
+#Initialization for NaiveBayes
+NB_ROC<-list()
+NB_Accuracy_Rate<-rep(NA,split)
+NB_AUC<-rep(NA,split)
+#Initialization
+K_NB_ROC<-list()
+K_NB_Accuracy_Rate<-rep(NA,split)
+K_NB_AUC<-rep(NA,split)
+#Initialization for SVM
+L_SVM_ROC<-list()
+L_SVM_Accuracy_Rate<-rep(NA,split)
+L_SVM_AUC<-rep(NA,split)
+#Initialization
+R_SVM_ROC<-list()
+R_SVM_Accuracy_Rate<-rep(NA,split)
+R_SVM_AUC<-rep(NA,split)
+#Initialization for Classification
+Classification_ROC<-list()
+Classification_Accuracy_Rate<-rep(NA,split)
+Classification_AUC<-rep(NA,split)
+#Initialization for Boost Tree 
+Boost_ROC<-list()
+Boost_Accuracy_Rate<-rep(NA,split)
+Boost_AUC<-rep(NA,split)
+#Initialization for RandomForest 
+RandomForest_ROC<-list()
+RandomForest_Accuracy_Rate<-rep(NA,split)
+RandomForest_AUC<-rep(NA,split)
+
+
+for (i in 1:split){
+  train<-training(bst_sample$splits[[i]])
+  NIR[i] <- max(table(train$Outcome)/nrow(train))
+}
+```
+
+## KNN model
+```{r}
+#Perfrom KNN model building
+for (i in 1:split){
+  train<-training(bst_sample$splits[[i]])
+  test<-testing(bst_sample$splits[[i]])
+  ## K values for tuning
+  kgrid <- expand.grid(k = seq(2,51))
+  train$Outcome <- as.factor(train$Outcome)
+  ## LOOCV tuning
+  tr <- trainControl(method = "cv",
+                     number = 5)
+  
+  ## Train k
+  fit <- train(Outcome ~ .,
+               data = train,
+               method = "knn",
+               tuneGrid = kgrid,
+               trControl = tr)
+  
+  #Plot tune result
+  plot(fit)
+  
+  #View tuned K
+  fit$bestTune$k
+  
+  # Refit the model with best K
+  tuned_knn_class <- train(Outcome ~ .,
+                           data = train,
+                           method = "knn",
+                           tuneGrid = expand.grid(k = fit$bestTune$k),
+                           trControl = trainControl(method = "none"))
+  
+  #Confusion matrix
+  knn_pre<-predict(tuned_knn_class,newdata=test)
+  knn_result<-confusionMatrix(data=as.factor(test$Outcome),reference=knn_pre)
+  #Accuracy rate
+  KNN_Accuracy_Rate[i]<-knn_result$overall[[1]]
+  
+  #Plot ROC and AUC
+  knn_pre_ROC<-predict(tuned_knn_class,newdata=test,type = "prob")
+  knn_roccurve <- roc(response = test$Outcome,
+                      predictor = knn_pre_ROC[,2])
+  
+  KNN_ROC[[i]]<-ggroc(knn_roccurve, legacy.axes = TRUE, lwd=2) +  theme_bw(base_size = 18) + ggtitle(paste("KNN ROC BST",i))
+  KNN_AUC[i]<-auc(knn_roccurve)
+}
+
+```
+
+##  LDA model
+```{r}
+#Perfrom LDA model building
+#changing outcome to factor
+for (i in 1:split){
+train<-training(bst_sample$splits[[i]])
+test<-testing(bst_sample$splits[[i]])
+train$Outcome <- as.factor(train$Outcome)
+
+
+#LDA model
+caret_lda <- train(Outcome ~ .,
+                   data = train,
+                   method = "lda",
+                   trControl = trainControl(method = "repeatedcv", number = 5,
+                                            repeats = 50))
+
+lda_predict <- predict(caret_lda, newdata = test, type = 'raw')
+lda_result <- confusionMatrix(data=lda_predict, reference=test$Outcome)
+
+
+lda_predict_prob <- predict(caret_lda, newdata = test, type = 'prob')
+LDA_Accuracy_Rate[i]<-lda_result$overall["Accuracy"]
+roccurve_lda <- roc(response = test$Outcome, predictor = lda_predict_prob[,2], quiet = TRUE)
+LDA_ROC[[i]]<-ggroc(roccurve_lda, legacy.axes = TRUE, lwd=1) + theme_bw(base_size = 18) + ggtitle("ROC Curve for LDA") + theme(plot.title = element_text(hjust = 0.5))
+LDA_AUC[i]<-auc(roccurve_lda)
+}
+```
+
+## QDA model
+```{r}
+for (i in 1:split){
+train<-training(bst_sample$splits[[i]])
+test<-testing(bst_sample$splits[[i]])
+caret_qda <- train(Outcome ~ .,
+                   data = train,
+                   method = "qda",
+                   trControl = trainControl(method = "repeatedcv", number = 5,
+                                            repeats = 50))
+
+qda_predict <- predict(caret_qda, newdata = test, type = 'raw')
+qda_result <- confusionMatrix(data=qda_predict, reference=test$Outcome)
+
+
+qda_predict_prob <- predict(caret_qda, newdata = test, type = 'prob')
+QDA_Accuracy_Rate[i]<-qda_result$overall["Accuracy"]
+roccurve_qda <- roc(response = test$Outcome, predictor = qda_predict_prob[,2], quiet = TRUE)
+QDA_ROC[[i]]<-ggroc(roccurve_qda, legacy.axes = TRUE, lwd=1) + theme_bw(base_size = 18) + ggtitle("ROC Curve for QDA") + theme(plot.title = element_text(hjust = 0.5))
+QDA_AUC[i]<-auc(roccurve_qda)
+}
+```
+
+## LDA model enhanced (with only few predictors)
+```{r}
+for (i in 1:split){
+train<-training(bst_sample$splits[[i]])
+test<-testing(bst_sample$splits[[i]])
+caret_lda <- train(Outcome ~Glucose+BMI+Pregnancy+Age,
+                   data = train,
+                   method = "lda",
+                   trControl = trainControl(method = "repeatedcv", number = 5,
+                                            repeats = 50))
+
+lda_predict <- predict(caret_lda, newdata = test, type = 'raw')
+lda_result <- confusionMatrix(data=lda_predict, reference=test$Outcome)
+
+En_LDA_Accuracy_Rate[i]<-lda_result$overall["Accuracy"]
+
+lda_predict_prob <- predict(caret_lda, newdata = test, type = 'prob')
+
+roccurve_lda <- roc(response = test$Outcome, predictor = lda_predict_prob[,2], quiet = TRUE)
+En_LDA_ROC[[i]]<-ggroc(roccurve_lda, legacy.axes = TRUE, lwd=1) + theme_bw(base_size = 18) + ggtitle("ROC Curve for Enhanced LDA") + theme(plot.title = element_text(hjust = 0.5))
+En_LDA_AUC[i]<-auc(roccurve_lda)
+}
+```
+
+## QDA model enhanced (with only few predictors)
+```{r}
+for (i in 1:split){
+train<-training(bst_sample$splits[[i]])
+test<-testing(bst_sample$splits[[i]])
+caret_qda <- train(Outcome ~Glucose+BMI+Pregnancy+Age,
+                   data = train,
+                   method = "qda",
+                   trControl = trainControl(method = "repeatedcv", number = 5,
+                                            repeats = 50))
+
+qda_predict <- predict(caret_qda, newdata = test, type = 'raw')
+qda_result <- confusionMatrix(data=qda_predict, reference=test$Outcome)
+En_QDA_Accuracy_Rate[i]<-qda_result$overall["Accuracy"]
+
+
+qda_predict_prob <- predict(caret_qda, newdata = test, type = 'prob')
+
+roccurve_qda <- roc(response = test$Outcome, predictor = qda_predict_prob[,2], quiet = TRUE)
+En_QDA_ROC[[i]]<-ggroc(roccurve_qda, legacy.axes = TRUE, lwd=1) + theme_bw(base_size = 18) + ggtitle("ROC Curve for Enhanced QDA") + theme(plot.title = element_text(hjust = 0.5))
+En_QDA_AUC[i]<-auc(roccurve_qda)
+}
+```
+
+## Logistic regression and selections
+```{r}
+############################################## 
+#Logistic
+#logistical regression. No clear collinearity according to VIF.
+for (i in 1:split){
+train<-training(bst_sample$splits[[i]])
+test<-testing(bst_sample$splits[[i]])
+glm<- glm(Outcome~.,train,family="binomial")
+summary(glm)
+
+# predicted probability of glm
+glm_prob <- predict(glm, test,type = "response")
+# predicted outcome of glm
+glm_pred <- rep(0, length(glm_prob))
+glm_pred[glm_prob > 0.5] <- 1
+Logistic_Accuracy_Rate[i]<-mean(glm_pred == test$Outcome)
+
+roccurve_glm <- roc(response = test$Outcome, predictor = glm_prob)
+Logistic_ROC[[i]]<-ggroc(roccurve_glm, legacy.axes = TRUE, lwd=2) +theme_bw(base_size = 18)
+Logistic_AUC[i]<-auc(roccurve_glm)
+
+############################################## 
+back<-step(glm) #backward selection based on AIC 4 variables
+back
+
+# predicted probability of back
+back_prob <- predict(back, test,type = "response")
+# ROC and its auc
+roccurve_back <- roc(response = test$Outcome, predictor = back_prob)
+Back_Logistic_ROC[[i]]<-ggroc(roccurve_back, legacy.axes = TRUE, lwd=2) +theme_bw(base_size = 18)
+Back_Logistic_AUC[i]<-auc(roccurve_back)
+
+# predicted outcome of glm for back
+back_pred <- rep(0, length(glm_prob))
+back_pred[back_prob > 0.5] <- 1
+Back_Logistic_Accuracy_Rate[i]<-mean(back_pred == test$Outcome)
+
+train_back<-as.data.frame(model.matrix(Outcome~.-1, data = train))
+
+
+############################################## 
+best<-bestglm(train_back, IC="AIC")
+best$BestModel
+# predicted probability of glm for best
+best_prob <- predict(best$BestModel, test,type = "response")
+# ROC and its auc
+roccurve_best <- roc(response = test$Outcome, predictor = best_prob)
+Best_Logistic_ROC[[i]]<-ggroc(roccurve_best, legacy.axes = TRUE, lwd=2) +theme_bw(base_size = 18)
+Best_Logistic_AUC[i]<-auc(roccurve_best)
+
+# predicted outcome of glm
+best_pred <- rep(0, length(glm_prob))
+best_pred[glm_prob > 0.5] <- 1
+Best_Logistic_Accuracy_Rate[i]<-mean(best_pred == test$Outcome)
+}
+```
+
+## NaiveBayes
+```{r}
+#Perfrom NaiveBayes W/O Kernel
+for (i in 1:split){
+train<-training(bst_sample$splits[[i]])
+test<-testing(bst_sample$splits[[i]])
+nb <- NaiveBayes(as.factor(Outcome) ~ .,
+                      data = train,
+                      usekernel = F)
+
+#Confusion matrix
+ns_pre<-predict(nb,newdata=test,type = "response")
+ns_result<-confusionMatrix(data=as.factor(test$Outcome),reference=ns_pre$class)
+#Accuracy rate
+NB_Accuracy_Rate[i]<-ns_result$overall["Accuracy"]
+
+ns_pre_ROC<-predict(nb,newdata=test,type = "prob")
+ns_roccurve <- roc(response = test$Outcome,
+                    predictor = ns_pre_ROC$posterior[,2])
+NB_ROC[[i]]<-ggroc(ns_roccurve, legacy.axes = TRUE, lwd=2) +  theme_bw(base_size = 18) + ggtitle(paste("NaiveBayes w/o Kernel ROC BST",i))
+
+NB_AUC[i]<-auc(ns_roccurve)
+}
+
+#Perfrom NaiveBayes With Kernel
+for (i in 1:split){
+train<-training(bst_sample$splits[[i]])
+test<-testing(bst_sample$splits[[i]])
+nb_K <- NaiveBayes(as.factor(Outcome) ~ .,
+                 data = train,
+                 usekernel = T)
+
+#Confusion matrix
+ns_k_pre<-predict(nb_K,newdata=test,type = "response")
+ns_k_result<-confusionMatrix(data=as.factor(test$Outcome),reference=ns_k_pre$class)
+#Accuracy rate
+K_NB_Accuracy_Rate[i]<-ns_k_result$overall["Accuracy"]
+
+
+ns_k_pre_ROC<-predict(nb_K,newdata=test,type = "prob")
+ns_k_roccurve <- roc(response = test$Outcome,
+                   predictor = ns_k_pre_ROC$posterior[,2])
+K_NB_ROC[[i]]<-ggroc(ns_k_roccurve, legacy.axes = TRUE, lwd=2) +  theme_bw(base_size = 18) + ggtitle(paste("NaiveBayes w/ Kernel ROC BST",i))
+
+K_NB_AUC[i]<-auc(ns_k_roccurve)
+}
+```
+
+## SVM Linear Model
+```{r}
+#SVM Linear Model
+# Tuning grid
+for (i in 1:split){
+train<-training(bst_sample$splits[[i]])
+test<-testing(bst_sample$splits[[i]])
+tune_grid <- expand.grid(cost = exp(seq(-7,3,len=11)))
+# Train the model
+sv_caret <- train(as.factor(Outcome) ~ .,
+                  data = train,
+                  method = "svmLinear2",
+                  tuneGrid = tune_grid,
+                  trControl = tr)
+
+
+#Plot SVM
+plot(sv_caret)
+
+#View tune cost
+sv_caret$bestTune
+
+# Final model
+sv_final <- train(as.factor(Outcome) ~ .,
+                         data = train,
+                         method = "svmLinear2",
+                         tuneGrid = expand.grid(cost = sv_caret$bestTune),
+                         trControl = trainControl(method = "none"))
+
+#Confusion matrix
+svm_pre<-predict(sv_final,newdata=test)
+sv_result<-confusionMatrix(data=as.factor(test$Outcome),reference=svm_pre)
+#Accuracy rate
+L_SVM_Accuracy_Rate[i]<-sv_result$overall["Accuracy"]
+
+
+sv_roccurve <- roc(response = test$Outcome,predictor=as.numeric(svm_pre))
+L_SVM_ROC[[i]]<-ggroc(sv_roccurve, legacy.axes = TRUE, lwd=2) +  theme_bw(base_size = 18) + ggtitle(paste("SVM Linear Kernel ROC BST",i))
+
+L_SVM_AUC[i]<-auc(sv_roccurve)
+}
+```
+
+## Radial
+```{r}
+# Train the model with Radial
+for (i in 1:split){
+train<-training(bst_sample$splits[[i]])
+test<-testing(bst_sample$splits[[i]])
+sv_caret_radial <- train(as.factor(Outcome) ~ .,
+                         data = train,
+                         method = "svmRadial",
+                         preProcess = c("center", "scale"),
+                         tuneGrid = expand.grid(C = exp(seq(-7,3,len=11)),sigma = 10^(seq(-3,3,len=7))),
+                         trControl = tr)
+
+
+#Plot SVM
+plot(sv_caret_radial)
+
+#View tune cost
+sv_caret_radial$bestTune
+
+# Final model
+sv_final_radial <- train(as.factor(Outcome) ~ .,
+                  data = train,
+                  method = "svmRadial",
+                  preProcess = c("center", "scale"),
+                  tuneGrid = expand.grid(sv_caret_radial$bestTune),
+                  trControl = trainControl(method = "none"))
+
+#Confusion matrix
+svm_pre_radial<-predict(sv_final_radial,newdata=test)
+sv_result_radial<-confusionMatrix(data=as.factor(test$Outcome),reference=svm_pre_radial)
+#Accuracy rate
+R_SVM_Accuracy_Rate[i]<-sv_result_radial$overall["Accuracy"]
+
+
+sv_roccurve_radial <- roc(response = test$Outcome,predictor=as.numeric(svm_pre_radial))
+R_SVM_ROC[[i]]<-ggroc(sv_roccurve_radial, legacy.axes = TRUE, lwd=2) +  theme_bw(base_size = 18)+ ggtitle(paste("SVM Radial Kernel ROC BST",i))
+
+R_SVM_AUC[i]<-auc(sv_roccurve_radial)
+}
+```
+
+## Classification tree
+```{r}
+#classification tree
+for (i in 1:split){
+train<-training(bst_sample$splits[[i]])
+test<-testing(bst_sample$splits[[i]])
+tree_class <- rpart(
+  Outcome ~ .,
+  data = train,
+  method = 'class',
+  parms = list(split = "information"),
+  control = rpart.control(
+    xval = 10,
+    minbucket = 2,
+    cp = 0
+  )
+)
+printcp(tree_class)
+cp <- tree_class$cptable
+tree_class_final <- prune(tree_class, cp = cp[3,1])#used minimum
+rpart.plot(tree_class_final)
+
+# test error rate using min cp
+tree_pred <- predict(tree_class_final, newdata=test, type = "class")
+
+Classification_Accuracy_Rate[i]<-mean(tree_pred == test$Outcome)
+
+tree_prob <- predict(tree_class_final, newdata=test, type = "prob")
+
+roccurve_tree <- roc(response = test$Outcome, predictor = tree_prob[,2])
+Classification_ROC[[i]]<-ggroc(roccurve_tree, legacy.axes = TRUE, lwd=2) +theme_bw(base_size = 18)
+Classification_AUC[i]<-auc_tree<-auc(roccurve_tree)
+
+klaR::errormatrix(true = test$Outcome, predicted = tree_pred, relative = TRUE)
+confusionMatrix(tree_pred,test$Outcome)
+}
+```
+
+## Boost tree
+```{r}
+for (i in 1:split){
+train<-training(bst_sample$splits[[i]])
+test<-testing(bst_sample$splits[[i]])
+cvcontrol <- trainControl(method = "repeatedcv",
+                          number = 5,
+                          allowParallel = TRUE)
+grid <- expand.grid(
+  n.trees = c(10, 50, 100, 500, 1000),
+  interaction.depth = c(1:3),
+  shrinkage = c(0.01, 0.05, 0.1),
+  n.minobsinnode = c(5,10)
+)
+capture <- capture.output(
+  train.gbm <- train(
+    Outcome ~ .,
+    data = train,
+    method = "gbm",
+    trControl = cvcontrol,
+    tuneGrid = grid
+  )
+)
+train.gbm
+
+boost_pred <- predict(train.gbm, newdata=test, type = "raw")
+Boost_Accuracy_Rate[i]<-mean(boost_pred == test$Outcome)
+
+
+boost_prob <- predict(train.gbm, newdata=test, type = "prob")
+
+roccurve_tree <- roc(response = test$Outcome, predictor = boost_prob[,2])
+Boost_ROC[[i]]<-ggroc(roccurve_tree, legacy.axes = TRUE, lwd=2) +theme_bw(base_size = 18)
+Boost_AUC[i]<-auc(roccurve_tree)
+}
+```
+
+## RandomForest tree
+```{r}
+for (i in 1:split){
+train<-training(bst_sample$splits[[i]])
+test<-testing(bst_sample$splits[[i]])
+randomF<-randomForest(Outcome~., data=train, mtry=3, importance=TRUE)
+randomF
+
+randomF_pred <- predict(randomF, newdata=test, type = "response")
+RandomForest_Accuracy_Rate[i]<-mean(randomF_pred == test$Outcome)
+
+
+randomF_prob <- predict(randomF, newdata=test, type = "prob")
+
+roccurve_randomF <- roc(response = test$Outcome, predictor = randomF_prob[,2])
+RandomForest_ROC[[i]]<-ggroc(roccurve_randomF, legacy.axes = TRUE, lwd=2) +theme_bw(base_size = 18)
+RandomForest_AUC[i]<-auc(roccurve_randomF)
+
+varImpPlot(randomF)#Glucose is the most important one.
+}
+```
+
+
+## Comparison Model Performance
+```{r}
+#Report matrix
+report <- rbind(NIR, KNN_Accuracy_Rate, LDA_Accuracy_Rate, QDA_Accuracy_Rate, En_LDA_Accuracy_Rate, En_QDA_Accuracy_Rate, Logistic_Accuracy_Rate, 
+                Back_Logistic_Accuracy_Rate, Best_Logistic_Accuracy_Rate, NB_Accuracy_Rate, K_NB_Accuracy_Rate,
+                L_SVM_Accuracy_Rate, R_SVM_Accuracy_Rate, Classification_Accuracy_Rate, Boost_Accuracy_Rate,
+                RandomForest_Accuracy_Rate,  
+                KNN_AUC, LDA_AUC, QDA_AUC, En_LDA_AUC, En_QDA_AUC, Logistic_AUC,  Back_Logistic_AUC, Best_Logistic_AUC, NB_AUC, K_NB_AUC,
+                L_SVM_AUC,  R_SVM_AUC, Classification_AUC,  Boost_AUC, RandomForest_AUC)
+
+
+report <- cbind(report, rowMeans(report))
+
+col_name<-rep(NA,split+1)
+col_name[split+1]<-"AVE"
+for (i in 1:split){
+  col_name[i]<- paste("Splt#",i)
+}
+colnames(report)<-col_name
+report
+```
+
