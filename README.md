@@ -34,5 +34,5 @@ Welcome to the Diabetes Data Visualization project under the BIProject repositor
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/your-username/BIProject.git
+   git clone https://github.com/DNXEMPIRE-1/BIProject.git
    cd BIProject
